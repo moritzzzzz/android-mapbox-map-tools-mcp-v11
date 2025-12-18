@@ -4,7 +4,7 @@ An Android library that enables AI agents like Claude to control Mapbox maps thr
 
 **Android equivalent of:** [mapbox-map-tools-mcp](https://github.com/moritzzzzz/mapbox-map-tools-mcp) (JavaScript/Web version)
 
-## 🎥 Demo
+## Demo
 
 The demo app includes a chat interface where you can talk to Claude to control the map in real-time:
 
@@ -23,6 +23,89 @@ The demo app includes a chat interface where you can talk to Claude to control t
 - 📷 **Camera Control** (pan, zoom, fit bounds)
 - 🎨 **Style Switching** (streets, satellite, outdoors, dark)
 - 🧹 **Layer Management** with selective clearing
+
+---
+
+## Using the Library in Your Project
+
+[![](https://jitpack.io/v/moritzzzzz/android-mapbox-map-tools-mcp-v11.svg)](https://jitpack.io/#moritzzzzz/android-mapbox-map-tools-mcp-v11)
+
+Add the Mapbox MCP Tools library to your Android project via JitPack:
+
+### Step 1: Add JitPack Repository
+
+In your **project-level** `settings.gradle.kts` (or `build.gradle`):
+
+```kotlin
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }  // Add this line
+    }
+}
+```
+
+### Step 2: Add the Dependency
+
+In your **app-level** `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    // Mapbox MCP Tools Library
+    implementation("com.github.moritzzzzz:android-mapbox-map-tools-mcp-v11:v1.0.0")
+
+    // Required: Mapbox Maps SDK (if not already included)
+    implementation("com.mapbox.maps:android:11.17.1")
+
+    // Required: Kotlin Serialization
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
+}
+```
+
+### Step 3: Use the Library
+
+```kotlin
+import com.mapbox.maps.MapView
+import com.mapbox.mcp.MapboxMapTools
+
+class YourActivity : AppCompatActivity() {
+    private lateinit var mapView: MapView
+    private lateinit var mapboxMapTools: MapboxMapTools
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // Initialize MapView
+        mapView = findViewById(R.id.mapView)
+
+        // Wait for map style to load
+        mapView.mapboxMap.loadStyleUri(Style.MAPBOX_STREETS) {
+            // Create MapboxMapTools wrapper
+            mapboxMapTools = MapboxMapTools(mapView)
+
+            // Get tool definitions for your LLM
+            val tools = mapboxMapTools.getToolsForLLM()
+            // Send these to Claude API or your LLM provider...
+
+            // Execute a tool
+            val result = mapboxMapTools.executeTool(
+                "pan_map_to_location",
+                mapOf(
+                    "latitude" to 48.8566,
+                    "longitude" to 2.3522,
+                    "zoom" to 12.0
+                )
+            )
+        }
+    }
+}
+```
+
+** Full integration example:** See the [demo app source code](mcp_tools_demo_app/app/src/main/java/com/example/mcp_tools_demo/) for a complete working implementation with Claude API integration.
+
+---
 
 ## Quick Start - Run the Demo
 
@@ -113,24 +196,26 @@ object Config {
 
 ---
 
-## 📚 Using the Library in Your Own App
+## Using the Library in Your Own App
 
-### Step 1: Add the Library Module
+### Installation Options
 
-Copy the `mapbox-mcp-tools` folder into your Android project, then add to `settings.gradle.kts`:
+**Option 1: JitPack (Recommended)** - See [Using the Library in Your Project](#-using-the-library-in-your-project) above
 
-```kotlin
-include(":mapbox-mcp-tools")
-```
+**Option 2: Manual Copy** - Copy the `mapbox-mcp-tools` module into your project:
 
-Add dependency in your app's `build.gradle.kts`:
-
-```kotlin
-dependencies {
-    implementation(project(":mapbox-mcp-tools"))
-    implementation("com.mapbox.maps:android-ndk27:11.17.1")
-}
-```
+1. Copy the `mapbox-mcp-tools` folder into your Android project
+2. Add to `settings.gradle.kts`:
+   ```kotlin
+   include(":mapbox-mcp-tools")
+   ```
+3. Add dependency in your app's `build.gradle.kts`:
+   ```kotlin
+   dependencies {
+       implementation(project(":mapbox-mcp-tools"))
+       implementation("com.mapbox.maps:android:11.17.1")
+   }
+   ```
 
 ### Step 2: Initialize MapboxMapTools
 
@@ -354,7 +439,7 @@ Change the map's visual appearance.
 
 ---
 
-## 💬 Example Prompts for Claude
+## Example Prompts for Claude
 
 Once the demo is running, try these natural language commands:
 
