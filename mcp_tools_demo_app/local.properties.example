@@ -1,0 +1,13 @@
+## This file is a template for local.properties
+# Copy this file to local.properties and fill in your actual values
+#
+# This file CAN be checked into Version Control Systems as a template
+# local.properties should NOT be checked in (it's in .gitignore)
+
+# Location of the Android SDK (filled automatically by Android Studio)
+# sdk.dir=/path/to/your/android/sdk
+
+# Claude API Configuration
+# Get your API key from: https://console.anthropic.com/
+# Replace YOUR_API_KEY_HERE with your actual Claude API key
+claude.api.key=YOUR_API_KEY_HERE

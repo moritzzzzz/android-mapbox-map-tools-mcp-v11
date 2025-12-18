@@ -1,0 +1,7 @@
+jdk:
+  - openjdk17
+before_install:
+  - cd mcp_tools_demo_app
+  - ./gradlew clean
+install:
+  - ./gradlew :mapbox-mcp-tools:publishToMavenLocal
