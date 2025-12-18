@@ -334,7 +334,246 @@ mapboxMapTools.executeTool("clear_map_layers", mapOf(
 
 ---
 
-## 🛠️ Available Tools
+## Using Multiple MCP Tool Sets / Extending the functions
+
+You can combine the Mapbox MCP Tools with other MCP servers or tool providers to give Claude access to multiple capabilities at once.
+
+### Architecture Overview
+
+```
+Claude API
+    ↓
+Your App sends combined tool list:
+    ├─ Mapbox Tools (this library)
+    ├─ Weather API Tools (hypothetical)
+    └─ Database Tools (hypothetical)
+    ↓
+Your App routes execution to correct provider
+```
+
+### Step 1: Create Multiple Tool Providers
+
+```kotlin
+class WeatherTools {
+    fun getToolsForLLM(): List<ToolDefinition> {
+        return listOf(
+            ToolDefinition(
+                name = "get_weather",
+                description = "Get current weather for a location",
+                inputSchema = InputSchema(
+                    type = "object",
+                    properties = mapOf(
+                        "city" to Property("string", "City name"),
+                        "country" to Property("string", "Country code (optional)")
+                    ),
+                    required = listOf("city")
+                )
+            )
+        )
+    }
+
+    fun executeTool(name: String, params: Map<String, Any?>): ToolResult {
+        return when (name) {
+            "get_weather" -> {
+                val city = params["city"] as? String ?: return ToolResult.Error("Missing city")
+                // Call your weather API here...
+                ToolResult.Success("Weather in $city: Sunny, 72°F")
+            }
+            else -> ToolResult.Error("Unknown tool: $name")
+        }
+    }
+}
+```
+
+### Step 2: Update ChatManager to Combine Tools
+
+Modify `ChatManager.kt` to accept multiple tool providers:
+
+```kotlin
+class ChatManager(
+    private val claudeApiClient: ClaudeApiClient,
+    private val mapboxMapTools: MapboxMapTools,
+    private val weatherTools: WeatherTools  // Add additional providers
+) {
+    suspend fun processMessage(userMessage: String): String {
+        // ... existing code ...
+
+        // Combine all tool definitions
+        val allTools = buildList {
+            addAll(mapboxMapTools.getToolsForLLM())
+            addAll(weatherTools.getToolsForLLM())
+            // Add more tool providers here...
+        }
+
+        Log.d(TAG, "Available tools: ${allTools.map { it.name }}")
+
+        // Send to Claude with all tools
+        val response = claudeApiClient.sendMessage(
+            messages = conversationHistory.toList(),
+            tools = allTools
+        )
+
+        // ... rest of existing code ...
+    }
+
+    private suspend fun executeToolCall(toolUseBlock: ContentBlock): String {
+        val toolName = toolUseBlock.name ?: return "Error: No tool name"
+        val params = convertJsonElementMapToAny(toolUseBlock.input ?: emptyMap())
+
+        Log.d(TAG, "Executing tool: $toolName with params: $params")
+
+        // Route to appropriate tool provider based on tool name
+        val result = when {
+            toolName.startsWith("add_") ||
+            toolName.startsWith("pan_") ||
+            toolName.startsWith("fit_") ||
+            toolName.startsWith("clear_") ||
+            toolName.startsWith("set_") -> {
+                // Mapbox tools
+                mapboxMapTools.executeTool(toolName, params)
+            }
+            toolName == "get_weather" -> {
+                // Weather tools
+                weatherTools.executeTool(toolName, params)
+            }
+            else -> {
+                ToolResult.Error("Unknown tool: $toolName")
+            }
+        }
+
+        return when (result) {
+            is ToolResult.Success -> result.data ?: "Success"
+            is ToolResult.Error -> "Error: ${result.message}"
+        }
+    }
+}
+```
+
+### Step 3: Update MainActivity Initialization
+
+```kotlin
+class MainActivity : AppCompatActivity() {
+    private lateinit var mapboxMapTools: MapboxMapTools
+    private lateinit var weatherTools: WeatherTools
+    private lateinit var chatManager: ChatManager
+
+    private fun initializeChatManager() {
+        val claudeApiClient = ClaudeApiClient(CLAUDE_API_KEY)
+        weatherTools = WeatherTools()  // Initialize additional provider
+
+        chatManager = ChatManager(
+            claudeApiClient,
+            mapboxMapTools,
+            weatherTools  // Pass additional provider
+        )
+
+        Log.d(TAG, "ChatManager initialized with ${
+            mapboxMapTools.getToolsForLLM().size + weatherTools.getToolsForLLM().size
+        } tools")
+    }
+}
+```
+
+### Step 4: Try Combined Commands
+
+Now Claude can use tools from multiple providers:
+
+```
+User: "Show me Paris and tell me the weather there"
+  ↓
+Claude calls:
+  1. pan_map_to_location (Mapbox)
+  2. get_weather (Weather API)
+  ↓
+App: "I've centered the map on Paris. The weather is Sunny, 72°F."
+```
+
+### Advanced: Dynamic Tool Routing
+
+For more complex scenarios, use a tool registry:
+
+```kotlin
+class ToolRegistry {
+    private val providers = mutableMapOf<String, ToolProvider>()
+
+    fun register(toolNamePrefix: String, provider: ToolProvider) {
+        providers[toolNamePrefix] = provider
+    }
+
+    fun getAllTools(): List<ToolDefinition> {
+        return providers.values.flatMap { it.getToolsForLLM() }
+    }
+
+    fun executeTool(toolName: String, params: Map<String, Any?>): ToolResult {
+        // Find provider by checking tool name prefixes or patterns
+        val provider = providers.entries.find { (prefix, _) ->
+            toolName.startsWith(prefix)
+        }?.value
+
+        return provider?.executeTool(toolName, params)
+            ?: ToolResult.Error("No provider found for tool: $toolName")
+    }
+}
+
+// Usage
+val registry = ToolRegistry()
+registry.register("map", mapboxMapTools)
+registry.register("weather", weatherTools)
+registry.register("db", databaseTools)
+
+val allTools = registry.getAllTools()
+val result = registry.executeTool("map_add_points", params)
+```
+
+### Example MCP Server Integrations
+
+**Common MCP servers you might want to integrate:**
+
+1. **File System MCP** - Read/write files
+   ```kotlin
+   implementation("com.github.user:filesystem-mcp-android:1.0.0")
+   ```
+
+2. **Database MCP** - Query databases
+   ```kotlin
+   implementation("com.github.user:sqlite-mcp-tools:1.0.0")
+   ```
+
+3. **Calendar MCP** - Access device calendar
+   ```kotlin
+   implementation("com.github.user:calendar-mcp-tools:1.0.0")
+   ```
+
+4. **Custom REST API Tools** - Wrap your own APIs
+   ```kotlin
+   class MyApiTools {
+       fun getToolsForLLM() = listOf(/* your tools */)
+       fun executeTool(name: String, params: Map<String, Any?>) = /* execute */
+   }
+   ```
+
+### Benefits of Multiple Tool Sets
+
+**Richer Interactions** - Claude can perform complex multi-domain tasks
+**Modularity** - Easy to add/remove tool providers
+**Reusability** - Share tool providers across different apps
+**Separation of Concerns** - Each provider handles its own domain
+
+### Best Practices
+
+1. **Use clear tool naming** - Prefix tool names with domain (e.g., `map_`, `weather_`, `db_`)
+2. **Document tool interactions** - Note which tools work well together
+3. **Handle errors gracefully** - Each provider should return consistent error formats
+4. **Test tool combinations** - Ensure Claude can chain tools correctly
+5. **Monitor token usage** - More tools = larger context, consider grouping related tools
+
+### Downsides of too many tools
+
+The major concern is the context length of the LLM request. The more tools are sent with the request, the more expensive each single request gets.
+
+---
+
+## Available Tools
 
 The library provides 7 MCP tools:
 
@@ -594,7 +833,7 @@ User sees response + map at Paris
 
 ## Security Best Practices
 
-⚠️ **Important:** This demo includes API keys for easy testing. For production apps:
+**Important:** This demo includes API keys for easy testing. For production apps:
 
 ### ❌ Don't Do This
 ```kotlin
@@ -701,7 +940,7 @@ android_mapbox_mcp_wrapper/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! Areas for improvement:
 
