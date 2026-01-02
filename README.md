@@ -567,9 +567,85 @@ val result = registry.executeTool("map_add_points", params)
 4. **Test tool combinations** - Ensure Claude can chain tools correctly
 5. **Monitor token usage** - More tools = larger context, consider grouping related tools
 
-### Downsides of too many tools
+### Token Cost & Performance Considerations
 
-The major concern is the context length of the LLM request. The more tools are sent with the request, the more expensive each single request gets.
+#### Input Token Impact
+
+**⚠️ Important:** The 7 Mapbox MCP tools add **~1,060 input tokens** to EVERY API request.
+
+**Cost Impact (Claude Sonnet 4.5):**
+```
+Input tokens:  1,060 tokens × $3/million  = $0.00318 per request
+Output tokens: varies (typically 500-2000 tokens)
+
+Example with typical 1,000 token response:
+  Input (tools + message): 1,160 tokens = $0.0035
+  Output (response):       1,000 tokens = $0.0150
+  ─────────────────────────────────────────────
+  Total per request:                    $0.0185
+```
+
+**Compared to requests WITHOUT tools:**
+- Base input (message only): ~100 tokens = $0.0003
+- **Tools add 10x more input tokens** (1,060 vs 100)
+- **But only ~2x total cost** (output dominates: $0.015 vs $0.0003)
+
+**Key Insight:** Tools increase your input token count significantly (~40-60% of total input), but output tokens usually cost more overall, so the impact is moderate.
+
+**Per-Tool Token Estimates:**
+| Tool | Tokens | Complexity |
+|------|--------|------------|
+| `add_points_to_map` | ~200 | High (nested schema) |
+| `add_route_to_map` | ~140 | Medium |
+| `add_polygon_to_map` | ~160 | Medium |
+| `pan_map_to_location` | ~120 | Low |
+| `fit_map_to_bounds` | ~130 | Medium |
+| `clear_map_layers` | ~90 | Low |
+| `set_map_style` | ~80 | Low |
+
+**Strategies to Reduce Token Usage:**
+
+1. **Selective Tool Loading** - Only send tools relevant to current context:
+   ```kotlin
+   // Only send map control tools for navigation
+   val tools = listOf(
+       mapboxMapTools.createPanMapToolDefinition(),
+       mapboxMapTools.createFitBoundsToolDefinition()
+   )
+   ```
+
+2. **Context-Based Filtering** - Enable/disable tool categories:
+   ```kotlin
+   val tools = when (userIntent) {
+       Intent.NAVIGATE -> mapboxMapTools.getNavigationTools()
+       Intent.ANNOTATE -> mapboxMapTools.getAnnotationTools()
+       Intent.ALL -> mapboxMapTools.getToolsForLLM()
+   }
+   ```
+
+3. **Caching** (if supported by API) - Tools stay the same, cache them across requests
+
+4. **Tool Descriptions** - Keep descriptions concise but clear
+
+**When Multiple Tool Sets Become a Problem:**
+- **3-4 tool sets (20-30 tools):** Still manageable (~3,000-4,000 tokens)
+- **5-8 tool sets (40-60 tools):** Noticeable cost increase (~6,000-8,000 tokens)
+- **10+ tool sets (80+ tools):** Consider dynamic loading or categorization
+
+**Monitor Your Usage:**
+```kotlin
+val toolsJson = json.encodeToString(tools)
+val estimatedTokens = toolsJson.length / 3.5  // Rough estimate
+Log.d("Tokens", "Sending ~${estimatedTokens.toInt()} tokens in tools")
+```
+
+**Downsides of Too Many Tools:**
+- ⚠️ **Increased latency** - Larger requests take longer to process
+- ⚠️ **Higher costs** - Linear increase with number of tools
+- ⚠️ **Context dilution** - LLM has more to "think about"
+- ⚠️ **Confusion** - Too many similar tools can reduce accuracy
+
+**Best Practice:** Start with essential tools, add more as needed based on actual usage patterns.
 
 ---
 
@@ -833,7 +909,7 @@ User sees response + map at Paris
 
 ## Security Best Practices
 
-**Important:** This demo includes API keys for easy testing. For production apps:
+⚠️ **Important:** This demo includes API keys for easy testing. For production apps:
 
 ### ❌ Don't Do This
 ```kotlin
@@ -940,7 +1016,7 @@ android_mapbox_mcp_wrapper/
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 Contributions welcome! Areas for improvement:
 
